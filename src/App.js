@@ -1,688 +1,445 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
-// Data and Utils
-import { greekLetters } from "./data/letters";
-import { vocabularyList, basicGreekWords, allGroups } from "./data/vocabulary"; // Added allGroups
+// Assuming utils/statsUtils contains functions making API calls to your backend
 import {
-  initializeStats,
-  loadStats,
-  saveStats,
-  selectWeightedRandom,
-  getCurrentFocusGroup,
-  isWordLearned,
-  getLearnedWords,
-  getLearnedGroups,
-  saveLearnedWordHistory,
-  loadLearnedWordHistory,
+  fetchStatsOverview,
+  fetchProgressHistory,
+  fetchNextItem,
+  submitAnswer,
   resetAllProgress,
-  LEARNED_MIN_SEEN, // *** ADD THIS IMPORT ***
-} from "./utils/statsUtils";
+  fetchDetailedStats,
+} from "./utils/statsUtils"; // Adjust path as needed
 
-// UI Components
+// Assuming components are in a 'components' subdirectory
 import QuizHeader from "./components/QuizHeader";
 import QuestionDisplay from "./components/QuestionDisplay";
-import AnswerInput from "./components/AnswerInput";
+import AnswerInput from "./components/AnswerInput"; // Using the updated component
 import Feedback from "./components/Feedback";
 import PerformanceTables from "./components/PerformanceTables";
-import ProgressPlot from "./components/ProgressPlot"; // Added
+import ProgressPlot from "./components/ProgressPlot";
 
-// Styles
-import "./greek-quiz.css";
-
-// Constants
-const REVIEW_QUESTIONS_COUNT = 15; // Number of questions in a review session
+import "./greek-quiz.css"; // Main CSS file
 
 function App() {
-  // --- State ---
-  const [letterStats, setLetterStats] = useState(() =>
-    loadStats("greekLetterStats_v2", () =>
-      initializeStats(greekLetters, "letter")
-    )
-  );
-  const [wordStats, setWordStats] = useState(() =>
-    loadStats("greekWordStats_v3", () =>
-      initializeStats(vocabularyList, "greek")
-    )
-  );
-  // New State for Learned Status and Review
-  const [learnedWordHistory, setLearnedWordHistory] = useState(() =>
-    loadLearnedWordHistory()
-  );
-  const [isReviewMode, setIsReviewMode] = useState(false);
-  const [reviewQuestionsRemaining, setReviewQuestionsRemaining] = useState(0);
-
+  // --- State Variables ---
   const [appMode, setAppMode] = useState("quiz"); // 'quiz' or 'vocabFocus'
-  const [currentItem, setCurrentItem] = useState(null);
-  const [itemType, setItemType] = useState("letter"); // 'letter' or 'word'
+  const [currentItemData, setCurrentItemData] = useState(null); // Holds { item, itemType, questionText, ... }
+  const [isLoading, setIsLoading] = useState(true); // For loading indicators
+  const [error, setError] = useState(null); // For displaying errors
 
-  // Input State
+  // Input fields state
   const [userNameInput, setUserNameInput] = useState("");
   const [userSoundInput, setUserSoundInput] = useState("");
   const [userPronunciationInput, setUserPronunciationInput] = useState("");
   const [userMeaningInput, setUserMeaningInput] = useState("");
 
-  // Feedback/Display State
+  // Feedback and answer display state
   const [showAnswer, setShowAnswer] = useState(false);
-  const [isNameCorrect, setIsNameCorrect] = useState(false);
-  const [isSoundCorrect, setIsSoundCorrect] = useState(false);
-  const [isPronunciationCorrect, setIsPronunciationCorrect] = useState(false);
-  const [isMeaningCorrect, setIsMeaningCorrect] = useState(false);
-  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackData, setFeedbackData] = useState(null); // Holds { isCorrect, feedbackMessage, correctAnswer, ... }
 
-  // --- Derived State (using useMemo for efficiency) ---
-  const [totalLetterScore, totalLetterQuestions] = useMemo(
-    () =>
-      Object.values(letterStats).reduce(
-        (acc, stats) => [
-          acc[0] + stats.correctAttempts,
-          acc[1] + stats.totalAttempts,
-        ],
-        [0, 0]
-      ),
-    [letterStats]
-  );
+  // Stats and History State
+  const [overviewStats, setOverviewStats] = useState({
+    totalLetterScore: 0,
+    totalLetterQuestions: 0,
+    totalWordScore: 0,
+    totalWordQuestions: 0,
+    learnedWordsCount: 0,
+    learnedGroupsCount: 0,
+    currentFocusGroup: null,
+  });
+  const [learnedWordHistory, setLearnedWordHistory] = useState([]); // For the plot [[ts, count], ...]
+  const [detailedLetterStats, setDetailedLetterStats] = useState({}); // For performance table
+  const [detailedWordStats, setDetailedWordStats] = useState({}); // For performance table
 
-  const [totalWordScore, totalWordQuestions] = useMemo(
-    () =>
-      Object.values(wordStats).reduce(
-        (acc, stats) => [
-          acc[0] + stats.correctAttempts,
-          acc[1] + stats.totalAttempts,
-        ],
-        [0, 0]
-      ),
-    [wordStats]
-  );
+  // Review Mode State
+  const [isReviewMode, setIsReviewMode] = useState(false); // Is a review session active?
+  const [reviewQuestionsRemaining, setReviewQuestionsRemaining] = useState(0); // How many left in session?
 
-  // Learned Status Calculations
-  const learnedWordKeys = useMemo(
-    () => getLearnedWords(wordStats),
-    [wordStats]
-  );
-  const learnedGroups = useMemo(() => getLearnedGroups(wordStats), [wordStats]);
-  const learnedWordsCount = learnedWordKeys.length;
-  const learnedGroupsCount = learnedGroups.length;
+  // --- Ref for Auto-Focus ---
+  const firstInputRef = useRef(null); // Create the ref for the first input
 
-  // Focus Group Calculation (only relevant in vocab mode)
-  const currentFocusGroup = useMemo(
-    () => (appMode === "vocabFocus" ? getCurrentFocusGroup(wordStats) : null),
-    [appMode, wordStats] // Depends on wordStats now
-  );
+  // --- Core Data Fetching Functions ---
 
-  // --- Effects ---
-  // Auto-save stats when they change
-  useEffect(() => {
-    saveStats("greekLetterStats_v2", letterStats);
-  }, [letterStats]);
-
-  useEffect(() => {
-    saveStats("greekWordStats_v3", wordStats);
-    // Track learned word history whenever word stats change
-    const currentCount = getLearnedWords(wordStats).length; // Recalculate needed
-    saveLearnedWordHistory(currentCount);
-    setLearnedWordHistory(loadLearnedWordHistory()); // Update state for plot
-  }, [wordStats]);
-
-  // Check for newly learned groups to trigger review mode
-  // Store previous count using a ref or by comparing inside useEffect
-  const [prevLearnedGroupCount, setPrevLearnedGroupCount] = useState(
-    learnedGroups.length
-  );
-  useEffect(() => {
-    const currentLearnedGroupCount = learnedGroups.length;
-    if (
-      currentLearnedGroupCount > prevLearnedGroupCount &&
-      appMode === "vocabFocus" &&
-      !isReviewMode
-    ) {
-      // Check !isReviewMode to prevent re-triggering during a review
+  const getNextQuestion = useCallback(
+    async (currentAppMode, currentReviewStatus, currentReviewRemaining) => {
       console.log(
-        `Group ${
-          learnedGroups[learnedGroups.length - 1]
-        } learned! Starting review.`
+        `Requesting next item. Mode: ${currentAppMode}, Review Active: ${currentReviewStatus}, Remaining: ${currentReviewRemaining}`
       );
-      setIsReviewMode(true);
-      setReviewQuestionsRemaining(REVIEW_QUESTIONS_COUNT);
-    }
-    // Update the stored previous count for the next comparison
-    setPrevLearnedGroupCount(currentLearnedGroupCount);
-  }, [learnedGroups, appMode, isReviewMode, prevLearnedGroupCount]); // Add dependencies
+      setIsLoading(true);
+      setError(null);
+      setShowAnswer(false);
+      setFeedbackData(null);
+      setUserNameInput("");
+      setUserSoundInput("");
+      setUserPronunciationInput("");
+      setUserMeaningInput("");
 
-  // --- Core Logic ---
-
-  const selectNextItem = useCallback(() => {
-    let selectedItem = null;
-    let nextItemType = "letter"; // Default assumption
-    let selectionPool = [];
-    let prioritizeStruggled = false; // Flag for weighted selection
-
-    // --- Determine Mode and Pool ---
-    if (isReviewMode && appMode === "vocabFocus") {
-      nextItemType = "word";
-      // Pool: All currently learned words
-      selectionPool = vocabularyList.filter((w) =>
-        learnedWordKeys.includes(w.greek)
-      );
-
-      if (selectionPool.length === 0) {
-        // Fallback if no words learned yet
-        console.warn(
-          "Review mode active, but no learned words found. Exiting review."
+      try {
+        const nextItemData = await fetchNextItem(
+          currentAppMode,
+          currentReviewStatus,
+          currentReviewRemaining
         );
-        setIsReviewMode(false);
-        setReviewQuestionsRemaining(0);
-        // Fall through to normal vocabFocus logic below
-      } else {
-        // Select from the pool of *all* learned words,
-        // but prioritize the ones needing practice using the flag.
-        prioritizeStruggled = true; // Prioritize struggled within the learned pool
+        setCurrentItemData(nextItemData);
+        setIsReviewMode(nextItemData.isReviewMode);
+        setReviewQuestionsRemaining(nextItemData.reviewQuestionsRemaining);
+        console.log("Received next item:", nextItemData);
+        // Focus logic is handled by useEffect below
+      } catch (err) {
+        console.error("Failed to fetch next item:", err);
+        setError(
+          `Failed to load next question: ${
+            err.message || "Server communication error"
+          }. Please check the backend and refresh.`
+        );
+        setCurrentItemData(null);
+      } finally {
+        setIsLoading(false);
       }
-    }
+    },
+    []
+  );
 
-    // Separate block for non-review modes OR if review mode exited above
-    if (!isReviewMode) {
-      if (appMode === "quiz") {
-        // Original Quiz Mode Logic (Letters + Basic Words)
-        const letterAccuracy =
-          totalLetterQuestions > 0
-            ? totalLetterScore / totalLetterQuestions
-            : 0;
-        const seenLettersCount = Object.values(letterStats).filter(
-          (s) => s.totalAttempts > 0
-        ).length;
-        const canShowBasicWords =
-          totalLetterQuestions >= 10 &&
-          letterAccuracy >= 0.7 &&
-          seenLettersCount >= greekLetters.length / 3 &&
-          basicGreekWords.length > 0;
-        const showBasicWordProbability = canShowBasicWords ? 0.2 : 0;
-
-        if (
-          Math.random() < showBasicWordProbability &&
-          basicGreekWords.length > 0
-        ) {
-          nextItemType = "word";
-          selectionPool = basicGreekWords;
-        } else if (greekLetters.length > 0) {
-          nextItemType = "letter";
-          selectionPool = greekLetters;
-        } else if (basicGreekWords.length > 0) {
-          // Fallback to basic words if no letters
-          nextItemType = "word";
-          selectionPool = basicGreekWords;
-        } else {
-          selectionPool = []; // No items available
-        }
-      } else {
-        // appMode === 'vocabFocus' (and not in review)
-        nextItemType = "word";
-        if (vocabularyList.length === 0) {
-          selectionPool = [];
-        } else {
-          const focusGroupNum = currentFocusGroup; // Use derived state
-          const learnedGroupNums = learnedGroups; // Use derived state
-          const FOCUS_RATIO = 2 / 3; // 2/3 focus group, 1/3 learned
-
-          const focusWords = vocabularyList.filter(
-            (w) => w.group === focusGroupNum
-          );
-          const learnedWordsPool = vocabularyList.filter((w) =>
-            learnedGroupNums.includes(w.group)
-          );
-
-          let poolToUse = [];
-          prioritizeStruggled = false; // Reset flag
-
-          if (focusWords.length === 0 && learnedWordsPool.length === 0) {
-            poolToUse = vocabularyList; // Fallback to all words
-          } else if (focusWords.length === 0) {
-            poolToUse = learnedWordsPool; // Only learned words left
-            prioritizeStruggled = true; // Prioritize struggled in this case
-          } else if (learnedWordsPool.length === 0) {
-            poolToUse = focusWords; // Only focus words left
-          } else {
-            // Apply ratio logic: Choose pool first, then select from it
-            if (Math.random() < FOCUS_RATIO) {
-              poolToUse = focusWords;
-            } else {
-              poolToUse = learnedWordsPool;
-              prioritizeStruggled = true; // Prioritize struggling within learned pool
-            }
-          }
-          selectionPool = poolToUse; // Set the pool for selection
-        }
-      }
-    } // end if(!isReviewMode)
-
-    // --- Perform Selection ---
-    if (selectionPool.length > 0) {
-      selectedItem = selectWeightedRandom(
-        selectionPool,
-        nextItemType === "letter" ? letterStats : wordStats,
-        nextItemType === "letter" ? "letter" : "greek",
-        nextItemType === "word", // isWord flag
-        prioritizeStruggled // Pass the flag
-      );
-    } else {
-      selectedItem = null; // No pool to select from
-    }
-
-    // --- Common Logic: Ensure no repeats, update state ---
-    let attempts = 0;
-    const maxAttempts = 10;
-    let finalSelectedItem = selectedItem;
-    const sourceList =
-      nextItemType === "letter" ? greekLetters : vocabularyList; // Base list for checks
-
-    // Prevent immediate repeats if possible
-    while (
-      currentItem &&
-      finalSelectedItem &&
-      sourceList.length > 1 && // Check if there are alternatives overall
-      selectionPool.length > 1 && // Check if alternatives exist in current pool
-      JSON.stringify(finalSelectedItem) === JSON.stringify(currentItem) &&
-      attempts < maxAttempts
-    ) {
-      attempts++;
-      // Try to select a *different* item from the *same pool* determined above
-      const currentPoolFiltered = selectionPool.filter(
-        (item) => JSON.stringify(item) !== JSON.stringify(currentItem)
-      );
-
-      const tempSelectedItem = selectWeightedRandom(
-        currentPoolFiltered.length > 0 ? currentPoolFiltered : selectionPool, // Use filtered pool if possible
-        nextItemType === "letter" ? letterStats : wordStats,
-        nextItemType === "letter" ? "letter" : "greek",
-        nextItemType === "word",
-        prioritizeStruggled // Use the same flag as the initial selection
-      );
-
-      // If re-selection failed or still resulted in the same item, break
-      if (
-        !tempSelectedItem ||
-        JSON.stringify(tempSelectedItem) === JSON.stringify(currentItem)
-      ) {
-        break;
-      }
-      finalSelectedItem = tempSelectedItem; // Found a different item
-    }
-
-    // Handle selection failure or empty lists
-    if (!finalSelectedItem) {
-      console.error(
-        "Failed to select a valid next item. Check data availability and selection logic."
-      );
-      // Try a very basic fallback (outside the determined pool if needed)
-      if (nextItemType === "letter" && greekLetters.length > 0) {
-        finalSelectedItem =
-          greekLetters[Math.floor(Math.random() * greekLetters.length)];
-      } else if (vocabularyList.length > 0) {
-        // Fallback to any word if original type was word or failed
-        finalSelectedItem =
-          vocabularyList[Math.floor(Math.random() * vocabularyList.length)];
-        nextItemType = "word"; // Ensure type matches fallback
-      } else {
-        setCurrentItem(null); // No items available at all
-        setFeedbackMessage("Error: No items available to select."); // Inform user
-        return;
-      }
-    }
-
-    setCurrentItem(finalSelectedItem);
-    setItemType(nextItemType);
-
-    // Clear inputs and feedback
-    setUserNameInput("");
-    setUserSoundInput("");
-    setUserPronunciationInput("");
-    setUserMeaningInput("");
-    setShowAnswer(false);
-    setFeedbackMessage("");
-    setIsNameCorrect(false);
-    setIsSoundCorrect(false);
-    setIsPronunciationCorrect(false);
-    setIsMeaningCorrect(false);
-  }, [
-    appMode,
-    letterStats,
-    wordStats,
-    currentItem,
-    totalLetterScore,
-    totalLetterQuestions,
-    isReviewMode,
-    learnedWordKeys, // Add learned status dependencies
-    learnedGroups,
-    currentFocusGroup,
-  ]); // Dependencies
-
-  // Initial Load / Mode Change Trigger
+  // --- Initial Data Load (useEffect) ---
   useEffect(() => {
-    if (
-      !currentItem &&
-      (greekLetters.length > 0 || vocabularyList.length > 0)
-    ) {
-      selectNextItem();
+    async function loadInitialData() {
+      console.log("Loading initial application data...");
+      setIsLoading(true);
+      setError(null);
+      try {
+        const [overview, history, detailedStatsData] = await Promise.all([
+          fetchStatsOverview(),
+          fetchProgressHistory(),
+          fetchDetailedStats(),
+        ]);
+        setOverviewStats(overview);
+        setLearnedWordHistory(history);
+        setDetailedLetterStats(detailedStatsData.letterStats || {});
+        setDetailedWordStats(detailedStatsData.wordStats || {});
+        console.log("Initial data loaded.");
+        await getNextQuestion("quiz", false, 0); // Fetch first question
+      } catch (err) {
+        console.error("Failed to load initial data:", err);
+        setError(
+          `Failed to load initial data: ${
+            err.message || "Server unavailable"
+          }. Please ensure the backend is running and refresh.`
+        );
+        setOverviewStats({
+          totalLetterScore: 0,
+          totalLetterQuestions: 0,
+          totalWordScore: 0,
+          totalWordQuestions: 0,
+          learnedWordsCount: 0,
+          learnedGroupsCount: 0,
+          currentFocusGroup: null,
+        });
+        setLearnedWordHistory([]);
+        setDetailedLetterStats({});
+        setDetailedWordStats({});
+        setCurrentItemData(null);
+      } finally {
+        setIsLoading(false);
+      }
     }
-    // Reset review mode if switching away from vocabFocus
-    if (appMode !== "vocabFocus" && isReviewMode) {
-      setIsReviewMode(false);
-      setReviewQuestionsRemaining(0);
-    }
-    // Safety check if lists become empty
-    if (currentItem && itemType === "letter" && greekLetters.length === 0)
-      setCurrentItem(null);
-    if (currentItem && itemType === "word" && vocabularyList.length === 0)
-      setCurrentItem(null);
-  }, [currentItem, selectNextItem, itemType, appMode, isReviewMode]); // Add dependencies
+    loadInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // --- Event Handlers ---
 
   const handleSubmit = useCallback(
-    (e) => {
+    async (e) => {
       e.preventDefault();
-      if (!currentItem || showAnswer) return;
+      if (!currentItemData || showAnswer || isLoading) return;
 
-      let feedback = "";
-      let overallCorrect = false;
-      let itemKey = null;
-      let statsUpdater = null;
-      let currentStats = null;
-      let keyField = "";
+      setIsLoading(true);
+      setError(null);
 
-      if (itemType === "letter") {
-        itemKey = currentItem.letter;
-        statsUpdater = setLetterStats;
-        currentStats = letterStats;
-        keyField = "letter";
-        if (!itemKey && itemKey !== 0) {
-          // Handle potential key issues (e.g., empty string or null)
-          console.error("Submit Error: Invalid letter key:", currentItem);
-          setFeedbackMessage("Error: Cannot process this letter item.");
-          setShowAnswer(true); // Show feedback area even on error
-          return;
-        }
-
-        const correctName = currentItem.name.toLowerCase();
-        const correctSound = currentItem.sound.toLowerCase();
-        const processedNameInput = userNameInput.trim().toLowerCase();
-        const processedSoundInput = userSoundInput.trim().toLowerCase();
-        const nameCorrect = processedNameInput === correctName;
-        const soundCorrect = processedSoundInput === correctSound;
-        setIsNameCorrect(nameCorrect);
-        setIsSoundCorrect(soundCorrect);
-        overallCorrect = nameCorrect && soundCorrect;
-
-        if (overallCorrect) feedback = "Correct! Well done.";
-        else {
-          feedback = "Incorrect: ";
-          if (!nameCorrect) feedback += `Name: ${currentItem.name}. `;
-          if (!soundCorrect) feedback += `Sound: ${currentItem.sound}.`;
-        }
-      } else {
-        // itemType === 'word'
-        itemKey = currentItem.greek;
-        statsUpdater = setWordStats;
-        currentStats = wordStats;
-        keyField = "greek";
-        if (!itemKey && itemKey !== 0) {
-          console.error("Submit Error: Invalid word key:", currentItem);
-          setFeedbackMessage("Error: Cannot process this word item.");
-          setShowAnswer(true); // Show feedback area even on error
-          return;
-        }
-
-        const correctPronunciation = currentItem.pronunciation.toLowerCase();
-        // Handle multiple possible meanings separated by '/'
-        const correctMeanings = currentItem.english
-          .toLowerCase()
-          .split("/")
-          .map((s) => s.trim())
-          .filter((s) => s); // Get individual meanings
-        const processedPronunciationInput = userPronunciationInput
-          .trim()
-          .toLowerCase();
-        const processedMeaningInput = userMeaningInput.trim().toLowerCase();
-
-        const pronunciationCorrect =
-          processedPronunciationInput === correctPronunciation;
-        // Check if user input matches ANY of the correct meanings
-        const meaningCorrect =
-          correctMeanings.length > 0
-            ? correctMeanings.some((ans) => processedMeaningInput === ans)
-            : false; // Handle empty meanings
-
-        setIsPronunciationCorrect(pronunciationCorrect);
-        setIsMeaningCorrect(meaningCorrect);
-        overallCorrect = pronunciationCorrect && meaningCorrect;
-
-        if (overallCorrect) feedback = "Correct! Well done.";
-        else {
-          feedback = "Incorrect: ";
-          if (!pronunciationCorrect)
-            feedback += `Pronun.: ${currentItem.pronunciation}. `;
-          // Only show meaning feedback if meanings exist to compare against
-          if (correctMeanings.length > 0 && !meaningCorrect) {
-            feedback += `Meaning: ${currentItem.english}.`; // Show all possibilities
-          } else if (correctMeanings.length === 0) {
-            feedback += `(No official meaning provided for comparison).`;
-          }
-        }
+      const { item, itemType } = currentItemData;
+      const itemKey = itemType === "letter" ? item?.letter : item?.greek;
+      if (!itemKey) {
+        console.error("Cannot submit, item key missing.");
+        setError("Internal error: Missing item key.");
+        setIsLoading(false);
+        return;
       }
 
-      // Update Stats using the determined updater and key
-      statsUpdater((prev) => {
-        // Ensure the key exists in prev, otherwise initialize it
-        const oldStats =
-          prev[itemKey] || initializeStats([currentItem], keyField)[itemKey];
-        // Handle potential undefined oldStats if initialization failed somehow
-        if (!oldStats) {
-          console.error(`Failed to get/initialize stats for key: ${itemKey}`);
-          return prev; // Return previous state without changes
-        }
+      const payload = {
+        itemKey,
+        itemType,
+        userNameInput,
+        userSoundInput,
+        userPronunciationInput,
+        userMeaningInput,
+        appMode,
+        isReviewMode,
+        reviewQuestionsRemaining,
+      };
+      console.log("Submitting answer:", payload);
 
-        // Ensure recentPerformance is an array before slicing
-        const recentPerf = Array.isArray(oldStats.recentPerformance)
-          ? oldStats.recentPerformance
-          : [];
-        // ** USE LEARNED_MIN_SEEN here **
-        const newRecentPerformance = [
-          ...recentPerf.slice(-(LEARNED_MIN_SEEN - 1)),
-          overallCorrect,
-        ];
+      try {
+        const result = await submitAnswer(payload);
+        console.log("Submit Answer Response:", result);
+        setFeedbackData(result);
+        setShowAnswer(true);
+        setOverviewStats(result.updatedOverview);
+        // Update review state for the *next* question based on response
+        setIsReviewMode(result.nextReviewStatus.isReviewMode);
+        setReviewQuestionsRemaining(
+          result.nextReviewStatus.reviewQuestionsRemaining
+        );
+        console.log(
+          `Next review state set: Mode=${result.nextReviewStatus.isReviewMode}, Remaining=${result.nextReviewStatus.reviewQuestionsRemaining}`
+        );
 
-        return {
-          ...prev,
-          [itemKey]: {
-            ...oldStats,
-            totalAttempts: (oldStats.totalAttempts || 0) + 1,
-            correctAttempts: overallCorrect
-              ? (oldStats.correctAttempts || 0) + 1
-              : oldStats.correctAttempts || 0,
-            consecutiveCorrect: overallCorrect
-              ? (oldStats.consecutiveCorrect || 0) + 1
-              : 0,
-            recentPerformance: newRecentPerformance,
-            lastSeen: Date.now(),
-          },
-        };
-      });
-
-      setFeedbackMessage(feedback.trim());
-      setShowAnswer(true);
-
-      // Handle review mode decrement after showing answer
-      if (isReviewMode) {
-        // Decrement happens *after* stats are updated for the current question
-        setReviewQuestionsRemaining((prev) => Math.max(0, prev - 1)); // Ensure it doesn't go below 0
+        // Refresh stats/history in background
+        fetchDetailedStats()
+          .then((data) => {
+            setDetailedLetterStats(data.letterStats || {});
+            setDetailedWordStats(data.wordStats || {});
+          })
+          .catch((err) =>
+            console.error("Failed to refresh detailed stats:", err)
+          );
+        fetchProgressHistory()
+          .then(setLearnedWordHistory)
+          .catch((err) => console.error("Failed to refresh history:", err));
+      } catch (err) {
+        console.error("Failed to submit answer:", err);
+        setError(
+          `Failed to submit answer: ${
+            err.message || "Server communication error"
+          }. Please try again.`
+        );
+        setShowAnswer(false);
+        setFeedbackData(null);
+      } finally {
+        setIsLoading(false);
       }
     },
     [
-      currentItem,
+      currentItemData,
       showAnswer,
-      itemType,
+      isLoading,
       userNameInput,
       userSoundInput,
       userPronunciationInput,
       userMeaningInput,
-      letterStats,
-      wordStats,
+      appMode,
       isReviewMode,
-      // LEARNED_MIN_SEEN is used implicitly via import now
+      reviewQuestionsRemaining,
     ]
-  ); // Dependencies
+  );
 
   const handleNextQuestion = useCallback(() => {
-    // Check if review mode should end (check current state value)
-    if (isReviewMode && reviewQuestionsRemaining <= 1) {
-      console.log("Review session finished.");
-      setIsReviewMode(false);
-      setReviewQuestionsRemaining(0);
-      // selectNextItem will be called by the useEffect triggered by state change
-    }
-    // Always select next item, whether ending review or continuing
-    selectNextItem();
-  }, [selectNextItem, isReviewMode, reviewQuestionsRemaining]);
+    // Use the current review state when fetching the next question
+    getNextQuestion(appMode, isReviewMode, reviewQuestionsRemaining);
+  }, [getNextQuestion, appMode, isReviewMode, reviewQuestionsRemaining]);
 
-  const resetStatsHandler = useCallback(() => {
+  const resetStatsHandler = useCallback(async () => {
     if (
       window.confirm(
-        "Reset ALL progress (stats and history)? This cannot be undone."
+        "WARNING: Reset ALL server progress? This cannot be undone."
       )
     ) {
-      resetAllProgress(); // Use the combined reset function
-      // Re-initialize state correctly
-      setLetterStats(initializeStats(greekLetters, "letter"));
-      setWordStats(initializeStats(vocabularyList, "greek"));
-      setLearnedWordHistory([]); // Reset history state
-      setCurrentItem(null); // Trigger re-selection via useEffect
-      setAppMode("quiz"); // Reset mode
-      setIsReviewMode(false); // Reset review state
-      setReviewQuestionsRemaining(0);
-      setPrevLearnedGroupCount(0); // Reset previous group count tracker
-      setShowAnswer(false);
-      setFeedbackMessage("");
-      // selectNextItem will be called by useEffect due to currentItem becoming null
+      setIsLoading(true);
+      setError(null);
+      try {
+        await resetAllProgress();
+        console.log("Reset successful. Reloading...");
+        setFeedbackData(null);
+        setShowAnswer(false);
+        setIsReviewMode(false);
+        setReviewQuestionsRemaining(0);
+        const [overview, history, detailedStatsData] = await Promise.all([
+          fetchStatsOverview(),
+          fetchProgressHistory(),
+          fetchDetailedStats(),
+        ]);
+        setOverviewStats(overview);
+        setLearnedWordHistory(history);
+        setDetailedLetterStats(detailedStatsData.letterStats || {});
+        setDetailedWordStats(detailedStatsData.wordStats || {});
+        setAppMode("quiz");
+        await getNextQuestion("quiz", false, 0); // Start fresh
+      } catch (err) {
+        console.error("Failed to reset progress:", err);
+        setError(`Failed to reset progress: ${err.message || "Server error"}.`);
+      } finally {
+        setIsLoading(false);
+      }
     }
-  }, []); // No dependencies needed
+  }, [getNextQuestion]);
 
   const changeMode = useCallback(
     (newMode) => {
       if (appMode !== newMode) {
+        console.log(`Changing mode from ${appMode} to ${newMode}`);
         setAppMode(newMode);
-        setIsReviewMode(false); // Exit review mode when changing app mode
+        setIsReviewMode(false); // Reset review state on mode change
         setReviewQuestionsRemaining(0);
-        setCurrentItem(null); // Force re-selection for the new mode via useEffect
+        getNextQuestion(newMode, false, 0); // Fetch item for new mode
       }
     },
-    [appMode]
+    [appMode, getNextQuestion]
   );
 
-  // --- Render ---
+  // --- Auto-Focus Effect ---
+  useEffect(() => {
+    // Focus the first input when a new question loads and answer is not shown
+    if (currentItemData && !showAnswer && firstInputRef.current) {
+      const timerId = setTimeout(() => {
+        // Check ref again inside timeout in case component updates quickly
+        if (firstInputRef.current) {
+          firstInputRef.current.focus();
+          // Optional: select text if you prefer
+          // firstInputRef.current.select();
+        }
+      }, 50); // Small delay (50ms) often helps ensure element is ready
+      return () => clearTimeout(timerId); // Cleanup timeout on unmount/change
+    }
+  }, [currentItemData, showAnswer]); // Re-run when item changes or answer visibility changes
 
-  // Loading/Error States
-  if (!currentItem && (greekLetters.length > 0 || vocabularyList.length > 0)) {
-    return <div className="quiz-container loading">Loading Quiz...</div>;
-  } else if (greekLetters.length === 0 && vocabularyList.length === 0) {
+  // --- Derived values for rendering ---
+  const displayItemKey = currentItemData?.item
+    ? currentItemData.itemType === "letter"
+      ? currentItemData.item.letter
+      : currentItemData.item.greek
+    : "";
+  const questionText =
+    currentItemData?.questionText ||
+    (isLoading ? "Loading..." : "No question loaded.");
+  const itemType = currentItemData?.itemType || null;
+  const groupNumber = itemType === "word" ? currentItemData?.item?.group : null;
+  const isOverallCorrect = feedbackData ? feedbackData.isCorrect : null;
+
+  // --- Render Logic ---
+  if (
+    isLoading &&
+    !currentItemData &&
+    !error &&
+    learnedWordHistory.length === 0
+  ) {
     return (
-      <div className="quiz-container error">Error: No quiz data available.</div>
-    );
-  } else if (!currentItem) {
-    // This state means selection failed or lists became empty after load
-    return (
-      <div className="quiz-container error">
-        {feedbackMessage ||
-          "Cannot display question. Check data or reset stats."}
+      <div className="quiz-container loading">
+        <h2>Loading Greek Quiz...</h2>
       </div>
     );
   }
-
-  // Determine overall correctness for feedback styling
-  const isOverallCorrect =
-    showAnswer &&
-    ((itemType === "letter" && isNameCorrect && isSoundCorrect) ||
-      (itemType === "word" && isPronunciationCorrect && isMeaningCorrect));
-
-  // Determine question text based on itemType
-  const questionText =
-    itemType === "letter"
-      ? "Provide the name and sound for this letter:"
-      : "Provide the pronunciation (transliteration) and meaning:";
+  if (error && !currentItemData) {
+    return (
+      <div className="quiz-container error">
+        <h2>Application Error</h2>
+        <p>{error}</p>
+        <button onClick={() => window.location.reload()}>Refresh</button>{" "}
+        <button onClick={resetStatsHandler}>Reset Progress</button>
+      </div>
+    );
+  }
+  if (!currentItemData && !isLoading) {
+    return (
+      <div className="quiz-container error">
+        <h2>Loading Issue</h2>
+        <p>Could not load question.</p>
+        <button onClick={() => window.location.reload()}>Refresh</button>{" "}
+        <button onClick={resetStatsHandler}>Reset Progress</button>
+      </div>
+    );
+  }
 
   return (
     <div className="quiz-container">
       <QuizHeader
         appMode={appMode}
         changeMode={changeMode}
-        displayFocusGroup={currentFocusGroup} // Use calculated focus group
-        totalLetterScore={totalLetterScore}
-        totalLetterQuestions={totalLetterQuestions}
-        totalWordScore={totalWordScore}
-        totalWordQuestions={totalWordQuestions}
-        learnedWordsCount={learnedWordsCount} // Pass learned counts
-        learnedGroupsCount={learnedGroupsCount}
-        isReviewMode={isReviewMode} // Pass review status
+        displayFocusGroup={overviewStats.currentFocusGroup}
+        totalLetterScore={overviewStats.totalLetterScore}
+        totalLetterQuestions={overviewStats.totalLetterQuestions}
+        totalWordScore={overviewStats.totalWordScore}
+        totalWordQuestions={overviewStats.totalWordQuestions}
+        learnedWordsCount={overviewStats.learnedWordsCount}
+        learnedGroupsCount={overviewStats.learnedGroupsCount}
+        isReviewMode={isReviewMode}
         reviewQuestionsRemaining={reviewQuestionsRemaining}
       />
 
-      <QuestionDisplay
-        displayItem={
-          itemType === "letter" ? currentItem.letter : currentItem.greek
-        }
-        questionText={questionText}
-        // Optionally show group number for words
-        groupNumber={itemType === "word" ? currentItem.group : null}
-      />
-
-      <form onSubmit={handleSubmit} className="input-form">
-        <AnswerInput
-          itemType={itemType}
-          userNameInput={userNameInput}
-          setUserNameInput={setUserNameInput}
-          userSoundInput={userSoundInput}
-          setUserSoundInput={setUserSoundInput}
-          userPronunciationInput={userPronunciationInput}
-          setUserPronunciationInput={setUserPronunciationInput}
-          userMeaningInput={userMeaningInput}
-          setUserMeaningInput={setUserMeaningInput}
-          showAnswer={showAnswer}
-        />
-        {!showAnswer && (
-          <button type="submit" className="submit-button">
-            {isReviewMode
-              ? `Submit (${reviewQuestionsRemaining} left)`
-              : "Submit"}
-          </button>
-        )}
-      </form>
-
-      <Feedback
-        showAnswer={showAnswer}
-        itemType={itemType}
-        isOverallCorrect={isOverallCorrect}
-        feedbackMessage={feedbackMessage}
-        currentItem={currentItem}
-        onNextQuestion={handleNextQuestion}
-      />
-
-      {/* Render Progress Plot only in vocab focus mode */}
-      {appMode === "vocabFocus" && (
-        <ProgressPlot learnedWordHistory={learnedWordHistory} />
+      {isLoading && (
+        <div className="loading-overlay">
+          <span>Loading...</span>
+        </div>
+      )}
+      {error && (
+        <div className="error-inline">
+          <p>
+            <strong>Warning:</strong> {error}
+          </p>
+        </div>
       )}
 
-      <div className="controls">
-        <button onClick={resetStatsHandler} className="reset-button">
-          Reset All Stats & History
-        </button>
-      </div>
+      {currentItemData && (
+        <>
+          <QuestionDisplay
+            displayItem={displayItemKey}
+            questionText={questionText}
+            groupNumber={groupNumber}
+          />
 
+          <form onSubmit={handleSubmit} className="input-form">
+            {/* Pass the ref to the AnswerInput component */}
+            <AnswerInput
+              itemType={itemType}
+              userNameInput={userNameInput}
+              setUserNameInput={setUserNameInput}
+              userSoundInput={userSoundInput}
+              setUserSoundInput={setUserSoundInput}
+              userPronunciationInput={userPronunciationInput}
+              setUserPronunciationInput={setUserPronunciationInput}
+              userMeaningInput={userMeaningInput}
+              setUserMeaningInput={setUserMeaningInput}
+              showAnswer={showAnswer}
+              firstInputRef={firstInputRef} // Pass the ref here
+            />
+            {!showAnswer && (
+              <button
+                type="submit"
+                className="submit-button"
+                disabled={isLoading}
+              >
+                {isReviewMode && reviewQuestionsRemaining > 0
+                  ? `Submit (${reviewQuestionsRemaining} Review Left)`
+                  : "Submit Answer"}
+              </button>
+            )}
+          </form>
+
+          <Feedback
+            showAnswer={showAnswer}
+            itemType={itemType}
+            isOverallCorrect={isOverallCorrect}
+            feedbackMessage={feedbackData?.feedbackMessage || ""}
+            currentItem={feedbackData?.correctAnswer || null}
+            onNextQuestion={handleNextQuestion}
+          />
+        </>
+      )}
+
+      <ProgressPlot learnedWordHistory={learnedWordHistory} />
       <PerformanceTables
         appMode={appMode}
-        letterStats={letterStats}
-        wordStats={wordStats}
-        // Pass learned status checker to tables if needed for display
-        isWordLearned={isWordLearned}
+        letterStats={detailedLetterStats}
+        wordStats={detailedWordStats}
       />
-    </div>
+      <div className="controls footer-controls">
+        <button
+          onClick={resetStatsHandler}
+          className="reset-button"
+          disabled={isLoading}
+        >
+          Reset All Server Progress
+        </button>
+      </div>
+    </div> // End quiz-container
   );
 }
 

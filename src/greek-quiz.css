@@ -4,17 +4,19 @@ body {
   line-height: 1.6;
   background-color: #f4f7f6;
   margin: 0;
-  padding: 20px;
+  padding: 20px; /* Default padding */
   color: #333;
 }
 
 .quiz-container {
   max-width: 700px;
   margin: 20px auto;
-  padding: 25px;
+  padding: 25px; /* Default padding */
   background-color: #ffffff;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  /* Added to prevent content breaking out on very small screens */
+  overflow: hidden;
 }
 
 .loading {
@@ -24,11 +26,43 @@ body {
   color: #666;
 }
 
+/* NEW: Inline Error Message Style */
+.error-inline {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  padding: 10px 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+.error-inline p {
+  margin: 0;
+}
+
+/* NEW: Loading Overlay Style */
+.loading-overlay {
+  position: fixed; /* Or absolute relative to quiz-container if preferred */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #555;
+  z-index: 100; /* Ensure it's on top */
+}
+
 .mode-selector {
   display: flex;
   justify-content: center;
   margin-bottom: 25px;
   gap: 10px;
+  flex-wrap: wrap; /* Allow wrapping on small screens */
 }
 
 .mode-selector button {
@@ -66,16 +100,22 @@ body {
 
 .quiz-scores {
   margin-bottom: 20px;
-  font-size: 1em;
+  font-size: 0.95em; /* Slightly smaller */
   color: #555;
   display: flex;
-  justify-content: space-around;
-  flex-wrap: wrap;
-  gap: 15px;
+  justify-content: space-around; /* Distribute space */
+  flex-wrap: wrap; /* Allow wrapping */
+  gap: 10px 20px; /* Row gap, Column gap */
   padding: 10px;
   background-color: #f9f9f9;
   border-radius: 4px;
   border: 1px solid #eee;
+  text-align: center; /* Center text within each span */
+}
+
+.quiz-scores span {
+  display: inline-block; /* Treat spans like blocks for alignment */
+  white-space: nowrap; /* Prevent score labels from wrapping */
 }
 
 .question-area {
@@ -89,12 +129,22 @@ body {
   color: #0056b3; /* A distinct color */
   margin-bottom: 10px;
   line-height: 1.2;
+  /* Added word-wrap for long words if needed, although less likely for Greek */
+  word-wrap: break-word;
 }
 
 .question-text {
   font-size: 1.1em;
   color: #444;
   margin-bottom: 15px;
+}
+
+.item-group-number {
+  font-size: 0.6em;
+  color: #888;
+  display: block;
+  margin-top: -5px;
+  margin-bottom: 5px;
 }
 
 .input-form {
@@ -107,16 +157,19 @@ body {
 .input-group {
   margin-bottom: 5px; /* Reduced margin */
   display: flex;
-  align-items: center;
+  align-items: center; /* Default alignment */
+  flex-wrap: wrap; /* Allow wrapping if label + input too wide */
 }
 
 .input-group label {
-  min-width: 70px; /* Adjusted width */
+  flex-basis: 100px; /* Use flex-basis for better control */
+  flex-shrink: 0; /* Prevent shrinking */
   margin-right: 10px;
   font-weight: bold;
   text-align: right;
   font-size: 0.95em;
   color: #555;
+  margin-bottom: 5px; /* Add space below label when wrapped */
 }
 
 .quiz-input {
@@ -126,6 +179,7 @@ body {
   border-radius: 4px;
   font-size: 1em;
   transition: border-color 0.2s ease;
+  min-width: 150px; /* Prevent input from becoming too small */
 }
 
 .quiz-input:focus {
@@ -157,7 +211,7 @@ body {
   margin-top: 10px; /* Add some space above */
 }
 
-.submit-button:hover {
+.submit-button:hover:not(:disabled) {
   background-color: #218838;
 }
 
@@ -169,7 +223,7 @@ body {
   min-width: 150px;
 }
 
-.next-button:hover {
+.next-button:hover:not(:disabled) {
   background-color: #0056b3;
 }
 
@@ -178,8 +232,15 @@ body {
   color: white;
 }
 
-.reset-button:hover {
+.reset-button:hover:not(:disabled) {
   background-color: #c82333;
+}
+
+.submit-button:disabled,
+.next-button:disabled,
+.reset-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
 }
 
 .submit-button:active,
@@ -202,7 +263,7 @@ body {
 }
 
 .correct-answer {
-  color: #28a745; /* Green */
+  color: #155724; /* Darker Green Text */
   border: 1px solid #c3e6cb;
   background-color: #d4edda;
   padding: 10px;
@@ -210,7 +271,7 @@ body {
 }
 
 .incorrect-answer {
-  color: #dc3545; /* Red */
+  color: #721c24; /* Darker Red Text */
   border: 1px solid #f5c6cb;
   background-color: #f8d7da;
   padding: 10px;
@@ -222,6 +283,13 @@ body {
   color: #333;
   margin-top: 8px;
   font-weight: normal; /* Normal weight */
+  text-align: left; /* Better for lists of details */
+  padding-left: 10px; /* Indent slightly */
+}
+
+.feedback-area .detail-feedback span {
+  display: block; /* Put each part on a new line */
+  margin-bottom: 3px;
 }
 
 .feedback-area .detail-feedback strong {
@@ -246,15 +314,23 @@ body {
   color: #333;
 }
 
-.performance-table {
+/* Wrap the table in a div that handles the scrolling */
+.performance-table-wrapper {
   width: 100%;
+  overflow-x: auto; /* Allow horizontal scroll on small screens */
+  -webkit-overflow-scrolling: touch; /* Smoother scrolling on iOS */
+  margin-bottom: 20px; /* Space below table */
+}
+
+.performance-table {
+  width: 100%; /* Table takes full width of its wrapper */
+  min-width: 600px; /* Set a min-width to prevent excessive squishing before scroll activates */
   border-collapse: collapse;
   font-size: 0.9em;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   background-color: #fff;
-  margin-bottom: 20px; /* Space below table */
-  overflow-x: auto; /* Allow horizontal scroll on small screens */
-  display: block; /* Needed for overflow-x */
+  /* display: block; REMOVED - table-layout: auto/fixed is better */
+  /* table-layout: fixed; Use if columns often get squished, but might cut off content */
 }
 
 .performance-table th,
@@ -271,7 +347,7 @@ body {
   color: #495057; /* Darker gray text */
   position: sticky; /* Make header sticky if table scrolls */
   top: 0;
-  z-index: 1;
+  z-index: 1; /* Ensure header stays above scrolling content */
 }
 
 .performance-table tbody tr:nth-child(even) {
@@ -283,23 +359,50 @@ body {
 }
 
 .performance-table .letter-symbol {
-  font-size: 1.2em;
-  font-weight: bold;
-  text-align: center;
+  /* Specific style for greek word column */
+  font-size: 1.1em; /* Slightly larger */
+  /* font-weight: bold; */ /* Optional */
+  text-align: left; /* Usually better left-aligned */
 }
 
-/* Center align numeric/symbolic columns */
+/* Center align specific columns (Check indices carefully!) */
+/* Assuming Letter Table: 1=Letter, 2=Name, 3=Correct, 4=Attempts, 5=Acc, 6=Consec, 7=Recent */
+.performance-table th:nth-child(1), .performance-table td:nth-child(1), /* Letter */
 .performance-table th:nth-child(3), .performance-table td:nth-child(3), /* Correct */
-  .performance-table th:nth-child(4), .performance-table td:nth-child(4), /* Attempts */
-  .performance-table th:nth-child(5), .performance-table td:nth-child(5), /* Accuracy */
-  .performance-table th:nth-child(6), .performance-table td:nth-child(6), /* Consecutive */
-  .performance-table th:nth-child(7), .performance-table td:nth-child(7)  /* Recent */ {
+.performance-table th:nth-child(4), .performance-table td:nth-child(4), /* Attempts */
+.performance-table th:nth-child(5), .performance-table td:nth-child(5), /* Accuracy */
+.performance-table th:nth-child(6), .performance-table td:nth-child(6), /* Consecutive */
+.performance-table th:nth-child(7), .performance-table td:nth-child(7)  /* Recent */ {
   text-align: center;
 }
 
-.performance-table td:nth-child(7) {
-  /* Recent */
+/* Assuming Word Table: 1=Group, 2=Greek, 3=Meaning, 4=Correct, 5=Attempts, 6=Acc, 7=Learned, 8=Consec, 9=Recent */
+.performance-table th:nth-child(1), .performance-table td:nth-child(1), /* Group */
+.performance-table th:nth-child(4), .performance-table td:nth-child(4), /* Correct */
+.performance-table th:nth-child(5), .performance-table td:nth-child(5), /* Attempts */
+.performance-table th:nth-child(6), .performance-table td:nth-child(6), /* Accuracy */
+.performance-table th:nth-child(7), .performance-table td:nth-child(7), /* Learned Status */
+.performance-table th:nth-child(8), .performance-table td:nth-child(8), /* Consec */
+.performance-table th:nth-child(9), .performance-table td:nth-child(9)  /* Recent */ {
+  text-align: center;
+}
+
+/* Override alignment for Word/Meaning columns in Word Table */
+.performance-table td:nth-child(2), /* Greek Word */
+.performance-table td:nth-child(3) /* Meaning */ {
+  text-align: left; /* Keep word/meaning left-aligned */
+  white-space: normal; /* Allow meaning to wrap if long */
+}
+/* Adjust header alignment for word/meaning too */
+.performance-table th:nth-child(2), /* Greek Word Header */
+.performance-table th:nth-child(3) /* Meaning Header */ {
+  text-align: left;
+}
+
+.performance-table td:nth-child(9), /* Recent Timestamp (Word Table) */
+.performance-table td:nth-child(7) /* Recent Timestamp (Letter Table) */ {
   font-family: monospace;
+  text-align: center; /* Center the timestamp */
 }
 
 .review-mode-indicator {
@@ -328,85 +431,115 @@ body {
   position: relative;
   /* height and margin already set inline, but can be moved here */
   /* height: 300px; */
-  /* margin-top: 30px; */
-  /* margin-bottom: 20px; */
+  margin-top: 30px;
+  margin-bottom: 20px;
   background-color: #fdfdfd; /* Slight background for contrast */
   padding: 10px;
   border-radius: 4px;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+  min-height: 200px; /* Ensure it has some height even if data is missing */
 }
 
-/* Adjust input group labels if needed */
-.input-group label {
-  /* min-width: 70px; - Adjust as needed */
-  flex-basis: 100px; /* Use flex-basis for better control */
-  flex-shrink: 0; /* Prevent shrinking */
-  margin-right: 10px;
-  font-weight: bold;
-  text-align: right;
-  font-size: 0.95em;
-  color: #555;
+/* --- RESPONSIVENESS FOR SMALLER SCREENS (e.g., Phones) --- */
+
+@media (max-width: 600px) {
+  body {
+    padding: 10px; /* Reduce body padding */
+    font-size: 15px; /* Slightly smaller base font */
+  }
+
+  .quiz-container {
+    padding: 15px; /* Reduce container padding */
+    margin: 10px auto; /* Reduce top/bottom margin */
+  }
+
+  .quiz-title {
+    font-size: 1.5em; /* Reduce title size */
+  }
+
+  .mode-selector button {
+    padding: 8px 12px;
+    font-size: 0.9em;
+  }
+
+  .quiz-scores {
+    font-size: 0.85em; /* Further reduce score font */
+    gap: 5px 10px; /* Reduce gaps */
+    padding: 8px;
+  }
+
+  .item-display {
+    font-size: 3em; /* Significantly reduce Greek letter/word size */
+  }
+
+  .question-text {
+    font-size: 1em; /* Reduce question text size */
+  }
+
+  .input-group {
+    flex-direction: column; /* Stack label and input */
+    align-items: stretch; /* Make items take full width */
+    gap: 5px; /* Space between label and input */
+  }
+
+  .input-group label {
+    text-align: left; /* Align label left when stacked */
+    margin-right: 0; /* Remove right margin */
+    margin-bottom: 3px; /* Space below label */
+    flex-basis: auto; /* Reset flex basis */
+    font-size: 0.9em;
+  }
+
+  .quiz-input {
+    font-size: 1em; /* Keep input font readable */
+    width: 100%; /* Ensure input takes full width */
+    box-sizing: border-box; /* Include padding in width calculation */
+    min-width: 0; /* Reset min-width */
+  }
+
+  .submit-button,
+  .next-button,
+  .reset-button {
+    padding: 10px 15px; /* Slightly smaller buttons */
+    font-size: 0.95em;
+  }
+
+  .feedback-area {
+    padding: 10px;
+  }
+  .feedback-area p {
+    font-size: 1em;
+  }
+  .feedback-area .detail-feedback {
+    font-size: 0.9em;
+  }
+
+  .performance-table-container h2 {
+    font-size: 1.2em;
+  }
+
+  /* Table adjustments for mobile */
+  .performance-table-wrapper {
+    margin-bottom: 15px;
+  }
+
+  .performance-table {
+    font-size: 0.8em; /* Reduce table font size */
+    min-width: 500px; /* Adjust min-width if needed */
+  }
+
+  .performance-table th,
+  .performance-table td {
+    padding: 6px 8px; /* Reduce cell padding */
+  }
+  /* Make sure meaning can wrap */
+  .performance-table td:nth-child(3) {
+    white-space: normal;
+  }
+
+  .progress-plot-container {
+    min-height: 150px; /* Reduce min-height */
+  }
 }
 
-/* Adjust table cell padding/alignment */
-.performance-table th,
-.performance-table td {
-  border: 1px solid #ddd;
-  padding: 8px 10px; /* Adjust padding if needed */
-  text-align: left;
-  white-space: nowrap; /* Prevent text wrapping in cells */
-}
-
-/* Center align specific columns (adjust indices if you changed table structure) */
-.performance-table th:nth-child(1), .performance-table td:nth-child(1), /* Group */
-.performance-table th:nth-child(2), .performance-table td:nth-child(2), /* Learned (Group Table) / Greek Word (Word Table) */
-.performance-table th:nth-child(4), .performance-table td:nth-child(4), /* Correct / Words */
-.performance-table th:nth-child(5), .performance-table td:nth-child(5), /* Attempts / Total Correct */
-.performance-table th:nth-child(6), .performance-table td:nth-child(6), /* Accuracy / Total Attempts */
-.performance-table th:nth-child(7), .performance-table td:nth-child(7), /* Learned (Word Table) / Accuracy (Group Table) */
-.performance-table th:nth-child(8), .performance-table td:nth-child(8), /* Consec */
-.performance-table th:nth-child(9), .performance-table td:nth-child(9)  /* Recent */ {
-  text-align: center;
-}
-
-/* Override alignment for Word/Meaning columns if needed */
-.performance-table td:nth-child(2), /* Greek Word (Word Table) */
-.performance-table td:nth-child(3) /* Meaning (Word Table) */ {
-  text-align: left; /* Keep word/meaning left-aligned */
-}
-
-.performance-table .letter-symbol {
-  /* Specific style for greek word column */
-  font-size: 1.1em; /* Slightly larger */
-  /* font-weight: bold; */ /* Optional */
-  text-align: left; /* Usually better left-aligned */
-}
-
-/* Ensure quiz scores wrap nicely */
-.quiz-scores {
-  display: flex;
-  justify-content: space-around; /* Distribute space */
-  flex-wrap: wrap; /* Allow wrapping */
-  gap: 10px 20px; /* Row gap, Column gap */
-  margin-bottom: 20px;
-  font-size: 0.95em; /* Slightly smaller */
-  color: #555;
-  padding: 10px;
-  background-color: #f9f9f9;
-  border-radius: 4px;
-  border: 1px solid #eee;
-  text-align: center; /* Center text within each span */
-}
-
-.quiz-scores span {
-  display: inline-block; /* Treat spans like blocks for alignment */
-}
-
-/* Adjust Question Display if group number added */
-.item-group-number {
-  font-size: 0.6em;
-  color: #888;
-  display: block;
-  margin-top: -5px;
-  margin-bottom: 5px;
-}
+/* --- END RESPONSIVENESS --- */

@@ -1,5 +1,6 @@
 import React from "react";
 
+// Accept firstInputRef as a prop
 function AnswerInput({
   itemType,
   userNameInput,
@@ -11,7 +12,19 @@ function AnswerInput({
   userMeaningInput,
   setUserMeaningInput,
   showAnswer,
+  firstInputRef, // Destructure the ref from props
 }) {
+  // Common input properties (can be spread onto the input elements)
+  const commonInputProps = {
+    type: "text",
+    className: "quiz-input", // Use a consistent class
+    disabled: showAnswer,
+    autoCapitalize: "none",
+    autoCorrect: "off",
+    spellCheck: "false",
+    autoComplete: "off", // Often good to disable autocomplete for quizzes
+  };
+
   if (itemType === "letter") {
     return (
       <>
@@ -19,76 +32,65 @@ function AnswerInput({
           <label htmlFor="nameInput">Name:</label>
           <input
             id="nameInput"
-            type="text"
+            {...commonInputProps} // Spread common props
             value={userNameInput}
             onChange={(e) => setUserNameInput(e.target.value)}
-            className="quiz-input"
             placeholder="Enter the name"
-            disabled={showAnswer}
             aria-label="Enter the letter name"
-            autoFocus={!showAnswer}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck="false"
+            // Attach the ref to the *first* input for letters
+            ref={firstInputRef}
+            // Removed autoFocus - will be handled by useEffect in App.jsx
           />
         </div>
         <div className="input-group">
           <label htmlFor="soundInput">Sound:</label>
           <input
             id="soundInput"
-            type="text"
+            {...commonInputProps} // Spread common props
             value={userSoundInput}
             onChange={(e) => setUserSoundInput(e.target.value)}
-            className="quiz-input"
             placeholder="Enter the sound"
-            disabled={showAnswer}
             aria-label="Enter the letter sound"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck="false"
+            // No ref needed here, only the first input gets focus
           />
         </div>
       </>
     );
-  } else {
-    // itemType === 'word'
+  } else if (itemType === "word") {
+    // Added explicit check for 'word' for clarity
     return (
       <>
         <div className="input-group">
           <label htmlFor="pronunciationInput">Pronun.:</label>
           <input
             id="pronunciationInput"
-            type="text"
+            {...commonInputProps} // Spread common props
             value={userPronunciationInput}
             onChange={(e) => setUserPronunciationInput(e.target.value)}
-            className="quiz-input"
             placeholder="e.g., logos"
-            disabled={showAnswer}
             aria-label="Enter the pronunciation"
-            autoFocus={!showAnswer}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck="false"
+            // Attach the ref to the *first* input for words
+            ref={firstInputRef}
+            // Removed autoFocus - will be handled by useEffect in App.jsx
           />
         </div>
         <div className="input-group">
           <label htmlFor="meaningInput">Meaning:</label>
           <input
             id="meaningInput"
-            type="text"
+            {...commonInputProps} // Spread common props
             value={userMeaningInput}
             onChange={(e) => setUserMeaningInput(e.target.value)}
-            className="quiz-input"
             placeholder="Enter the English meaning"
-            disabled={showAnswer}
             aria-label="Enter the English meaning"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck="false"
+            // No ref needed here
           />
         </div>
       </>
     );
+  } else {
+    // Optional: Render nothing or a placeholder if itemType is unexpected
+    return null;
   }
 }
 

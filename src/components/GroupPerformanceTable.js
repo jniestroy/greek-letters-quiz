@@ -1,8 +1,11 @@
 import React, { useMemo } from "react";
 import { vocabularyList, allGroups } from "../data/vocabulary";
 
-// Accept isWordLearned
-function GroupPerformanceTable({ wordStats, isWordLearned }) {
+// REMOVE isWordLearned prop
+function GroupPerformanceTable({ wordStats }) {
+  // Ensure wordStats is usable, provide empty object as fallback
+  const safeWordStats = wordStats || {};
+
   const groupData = useMemo(() => {
     return allGroups.map((groupNum) => {
       const wordsInGroup = vocabularyList.filter((w) => w.group === groupNum);
@@ -13,23 +16,26 @@ function GroupPerformanceTable({ wordStats, isWordLearned }) {
           totalCorrect: 0,
           accuracy: "N/A",
           wordCount: 0,
-          isGroupLearned: false,
+          isGroupLearned: false, // Default for empty groups
         };
       }
 
       let totalCorrect = 0;
       let totalAttempts = 0;
-      let allWordsInGroupLearned = true; // Flag for group learned status
+      let allWordsInGroupLearned = true; // Assume learned until proven otherwise
 
       wordsInGroup.forEach((word) => {
-        const stats = wordStats[word.greek] || {
+        // Use safeWordStats and provide default
+        const stats = safeWordStats[word.greek] || {
           correctAttempts: 0,
           totalAttempts: 0,
+          isLearned: false, // Add default isLearned
         };
         totalCorrect += stats.correctAttempts;
         totalAttempts += stats.totalAttempts;
-        // Check if *this* word is learned
-        if (!isWordLearned(word.greek, wordStats)) {
+
+        // *** USE THE isLearned FLAG from stats object ***
+        if (!stats.isLearned) {
           allWordsInGroupLearned = false; // If any word isn't learned, the group isn't
         }
       });
@@ -45,11 +51,11 @@ function GroupPerformanceTable({ wordStats, isWordLearned }) {
         totalCorrect,
         accuracy,
         wordCount: wordsInGroup.length,
-        isGroupLearned: allWordsInGroupLearned, // Store group learned status
+        isGroupLearned: allWordsInGroupLearned,
       };
     });
-    // Recalculate when wordStats or the learned check function changes
-  }, [wordStats, isWordLearned]);
+    // Recalculate only when wordStats changes
+  }, [safeWordStats]); // REMOVE isWordLearned dependency
 
   return (
     <div className="performance-table-container">
@@ -58,7 +64,7 @@ function GroupPerformanceTable({ wordStats, isWordLearned }) {
         <thead>
           <tr>
             <th>Group</th>
-            <th>Learned?</th> {/* New Header */}
+            <th>Learned?</th>
             <th>Words</th>
             <th>Total Correct</th>
             <th>Total Attempts</th>
@@ -71,13 +77,10 @@ function GroupPerformanceTable({ wordStats, isWordLearned }) {
               key={data.groupNum}
               className={data.isGroupLearned ? "learned-row" : ""}
             >
-              {" "}
-              {/* Optional styling */}
               <td style={{ textAlign: "center" }}>{data.groupNum}</td>
               <td style={{ textAlign: "center" }}>
                 {data.isGroupLearned ? "🏆 Yes" : "No"}
-              </td>{" "}
-              {/* Display Group Learned */}
+              </td>
               <td style={{ textAlign: "center" }}>{data.wordCount}</td>
               <td style={{ textAlign: "center" }}>{data.totalCorrect}</td>
               <td style={{ textAlign: "center" }}>{data.totalAttempts}</td>
