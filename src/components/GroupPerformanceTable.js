@@ -1,42 +1,45 @@
 import React, { useMemo } from "react";
-import { vocabularyList, allGroups } from "../data/vocabulary";
 
-// REMOVE isWordLearned prop
+// Removed the import of static vocabularyList and allGroups
+
 function GroupPerformanceTable({ wordStats }) {
   // Ensure wordStats is usable, provide empty object as fallback
   const safeWordStats = wordStats || {};
 
+  // Calculate group data dynamically from the wordStats prop
   const groupData = useMemo(() => {
-    return allGroups.map((groupNum) => {
-      const wordsInGroup = vocabularyList.filter((w) => w.group === groupNum);
-      if (wordsInGroup.length === 0) {
-        return {
-          groupNum,
-          totalAttempts: 0,
-          totalCorrect: 0,
-          accuracy: "N/A",
-          wordCount: 0,
-          isGroupLearned: false, // Default for empty groups
-        };
+    // 1. Group words by their group number from the stats object
+    const wordsByGroup = {};
+    Object.entries(safeWordStats).forEach(([greekWord, stats]) => {
+      // Use 0 or a placeholder if group is missing, though it shouldn't be
+      const groupNum = stats.group !== undefined ? stats.group : "Unknown";
+      if (!wordsByGroup[groupNum]) {
+        wordsByGroup[groupNum] = [];
       }
+      // Store the full stats object for each word within its group
+      wordsByGroup[groupNum].push(stats);
+    });
+
+    // 2. Get sorted group numbers present in the data
+    const sortedGroupNumbers = Object.keys(wordsByGroup)
+      .map(Number) // Convert keys to numbers for proper sorting
+      .sort((a, b) => a - b);
+
+    // 3. Calculate stats for each group
+    return sortedGroupNumbers.map((groupNum) => {
+      const wordsInThisGroup = wordsByGroup[groupNum] || []; // Should always exist here
 
       let totalCorrect = 0;
       let totalAttempts = 0;
-      let allWordsInGroupLearned = true; // Assume learned until proven otherwise
+      let allWordsInGroupLearned = wordsInThisGroup.length > 0; // Start assuming true only if group has words
 
-      wordsInGroup.forEach((word) => {
-        // Use safeWordStats and provide default
-        const stats = safeWordStats[word.greek] || {
-          correctAttempts: 0,
-          totalAttempts: 0,
-          isLearned: false, // Add default isLearned
-        };
-        totalCorrect += stats.correctAttempts;
-        totalAttempts += stats.totalAttempts;
+      wordsInThisGroup.forEach((stats) => {
+        totalCorrect += stats.correctAttempts || 0; // Add safety checks
+        totalAttempts += stats.totalAttempts || 0;
 
-        // *** USE THE isLearned FLAG from stats object ***
+        // Check the isLearned flag directly from the stats object
         if (!stats.isLearned) {
-          allWordsInGroupLearned = false; // If any word isn't learned, the group isn't
+          allWordsInGroupLearned = false;
         }
       });
 
@@ -50,12 +53,12 @@ function GroupPerformanceTable({ wordStats }) {
         totalAttempts,
         totalCorrect,
         accuracy,
-        wordCount: wordsInGroup.length,
+        wordCount: wordsInThisGroup.length,
         isGroupLearned: allWordsInGroupLearned,
       };
     });
     // Recalculate only when wordStats changes
-  }, [safeWordStats]); // REMOVE isWordLearned dependency
+  }, [safeWordStats]); // Dependency is correct
 
   return (
     <div className="performance-table-container">
@@ -72,6 +75,7 @@ function GroupPerformanceTable({ wordStats }) {
           </tr>
         </thead>
         <tbody>
+          {/* Render the calculated group data */}
           {groupData.map((data) => (
             <tr
               key={data.groupNum}
@@ -79,6 +83,7 @@ function GroupPerformanceTable({ wordStats }) {
             >
               <td style={{ textAlign: "center" }}>{data.groupNum}</td>
               <td style={{ textAlign: "center" }}>
+                {/* Display Learned Status based on calculation */}
                 {data.isGroupLearned ? "🏆 Yes" : "No"}
               </td>
               <td style={{ textAlign: "center" }}>{data.wordCount}</td>
@@ -87,6 +92,12 @@ function GroupPerformanceTable({ wordStats }) {
               <td style={{ textAlign: "center" }}>{data.accuracy}</td>
             </tr>
           ))}
+          {/* Optional: Add a message if there are no groups/stats */}
+          {groupData.length === 0 && (
+            <tr>
+              <td colSpan="6">No group statistics available yet.</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

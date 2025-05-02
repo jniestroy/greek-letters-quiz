@@ -92,6 +92,44 @@ export async function fetchDetailedStats() {
   return fetchApi("/detailed_stats"); // Call the new endpoint
 }
 
+export async function fetchNextReviewItem() {
+  return fetchApi("/next_review_item"); // Calls the new endpoint
+}
+
+export async function renameGreekWord(oldGreekWord, newGreekWord) {
+  const encodedOldWord = encodeURIComponent(oldGreekWord);
+  return fetchApi(`/word_rename/${encodedOldWord}`, {
+    method: "POST",
+    body: JSON.stringify({ new_greek: newGreekWord }),
+  });
+}
+
+export async function fetchAllEditableWords() {
+  return fetchApi("/editable_words");
+}
+
+export async function fetchWordDetails(greekWord) {
+  // Encode the Greek word properly for the URL path
+  const encodedWord = encodeURIComponent(greekWord);
+  return fetchApi(`/word_details/${encodedWord}`);
+}
+
+export async function updateWordDetails(greekWord, updatedData) {
+  // updatedData should be an object like { english: "...", pronunciation: "..." }
+  const encodedWord = encodeURIComponent(greekWord);
+  return fetchApi(`/word_details/${encodedWord}`, {
+    method: "PUT",
+    body: JSON.stringify(updatedData),
+  });
+}
+
+export async function resetWordStats(greekWord) {
+  const encodedWord = encodeURIComponent(greekWord);
+  return fetchApi(`/word_details/${encodedWord}/reset_stats`, {
+    method: "POST", // No body needed for this action
+  });
+}
+
 // --- Placeholder/Removed Functions ---
 // These functions are no longer needed as the logic lives on the backend.
 // Keep them commented or remove them entirely.
